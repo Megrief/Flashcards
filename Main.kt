@@ -2,142 +2,219 @@ package flashcards
 
 import java.io.File
 import java.io.FileNotFoundException
-import java.util.Scanner
-val scan = Scanner(System.`in`)
+import kotlin.random.Random
+
+val random = Random.Default
+fun String.addToLog(): String {
+    logList.add(this)
+    return this
+}
+val logList = mutableListOf<String>()
 
 fun main() {
     Flashcards()
 }
 
 class Flashcards {
-    private val cards = mutableMapOf<String, String>()
+    private val cardList: MutableList<Card> = mutableListOf()
+    private val functions: Funs = Funs()
     private var stop = false
+
     init {
         while (!stop) {
-            menu()
+            println("Input the action (add, remove, import, export, ask, exit, log, hardest card, reset stats):".addToLog())
+            menu(readln().addToLog())
         }
     }
 
-    private fun menu() {
-        println("Input the action (add, remove, import, export, ask, exit):")
-        val input = readln()
-        if (input != "exit") {
-            when (input) {
-                "add" -> adding()
-                "remove" -> removing()
-                "import" -> importing()
-                "export" -> exporting()
-                "ask" -> asking()
-                else -> println("Wrong command!")
+    private fun menu(input: String) {
+        when (input) {
+            "add" -> functions.add(cardList)
+            "remove" -> functions.remove(cardList)
+            "import" -> functions.import(cardList)
+            "export" -> functions.export(cardList)
+            "ask" -> functions.ask(cardList)
+            "log" -> functions.log()
+            "hardest card" -> functions.hardestCard(cardList)
+            "reset stats" -> functions.reset(cardList)
+            "exit" -> stop = functions.exit()
+            else -> println("Wrong action!".addToLog())
+        }
+    }
+}
+
+data class Card(
+    val term: String,
+    val definition: String,
+    var mistakes: Int = 0
+)
+
+private class Funs {
+
+    fun add(list: MutableList<Card>) {
+        println("The card:".addToLog())
+        val term = readln().addToLog()
+        if (list.any { it.term == term }) return println("The card \"$term\" already exists.".addToLog())
+        println("The definition of the card:".addToLog())
+        val definition = readln().addToLog()
+        if (list.any { it.definition == definition }) return println("The definition \"$definition\" already exists.".addToLog())
+        list.add(Card(term, definition))
+        println("The pair (\"$term\":\"$definition\") has been added.".addToLog())
+    }
+
+    fun remove(list: MutableList<Card>) {
+        println("Which card?".addToLog())
+        val input = readln().addToLog()
+        list.forEachIndexed { index, card ->
+            if (card.term == input) {
+                list.removeAt(index)
+                return println("The card has been removed.".addToLog())
             }
-        } else exit()
-    }
-    private fun adding() {
-        println("The card:")
-        val key: String = readln()
-        try {
-            if (key in cards.keys) throw Exception("Key exists")
-        } catch (e: Exception) {
-            println("The card \"$key\" already exists.")
-            return menu()
         }
-        println("The definition of the card:")
-        val value: String = readln()
+        println("Can't remove \"$input\": there is no such card.".addToLog())
+    }
+
+    fun import(list: MutableList<Card>) {
+        println("File name:".addToLog())
         try {
-            if (value in cards.values) throw Exception("Value exists")
-        } catch (e: Exception) {
-            println("The definition \"$value\" already exists.")
-            return menu()
+            val imported = File(readln().addToLog()).readLines().map { it.split(':').toCard() }.toMutableList()
+            val size = imported.size
+            for (ind in imported.indices) {
+                list.forEachIndexed { index, card ->
+                    if (imported[ind].term == card.term || imported[ind].definition == card.definition) {
+                        imported[ind].mistakes += card.mistakes
+                        list[index] = imported[ind]
+                        imported.removeAt(ind)
+                    }
+                }
+            }
+            list += imported
+            println("$size cards have been loaded.".addToLog())
+        } catch (_: FileNotFoundException) {
+            return println("File not found.".addToLog())
         }
-        cards[key] = value
-        println("The pair (\"$key\":\"$value\") has been added.")
-        return menu()
     }
-    private fun removing() {
-        println("Which card?")
-        val input = readln()
-        if (input in cards.keys) {
-            cards.remove(input)
-            println("The card has been removed.")
-        } else println("Can't remove \"$input\": there is no such card.")
-        menu()
+    private fun List<String>.toCard(): Card {
+        return when {
+            this.isEmpty() -> throw Exception("List is empty!")
+            this.size == 2 -> Card(this[0], this[1], 0)
+            this.size == 3 -> Card(this[0], this[1], this[2].toInt())
+            else -> throw Exception("Wrong text format!")
+        }
     }
-    private fun importing() {
-        println("File name:")
+
+    fun export(list: MutableList<Card>) {
         try {
-            val file = File(readln())
-            val list: List<String> = file.readLines()
-            val map: Map<String, String> = buildMap {
+            println("File name:".addToLog())
+            val savedCards = File(readln().addToLog())
+            val lines = buildList {
                 list.forEach {
-                    val li = it.split(':')
-                    this[li[0]] = li[1]
+                    this.add("${ it.term }:${ it.definition }:${ it.mistakes }")
                 }
             }
-            cards += map
-            println(map.size.toString() + " cards have been loaded." )
-        } catch (e: FileNotFoundException) {
-            println("File not found.")
-        }
-        menu()
-    }
-    private fun exporting() {
-        try {
-            println("File name:")
-            val savedCards = File(readln())
-            val list = buildList {
-                cards.forEach { (key, value) ->
-                    this.add("$key:$value")
-                }
-            }
-            for (ind in list.indices) {
+            for (ind in lines.indices) {
                 if (ind == 0) {
                     savedCards.writeText("""
-                    ${ list[ind] }
+                    ${ lines[ind] }
                     
                     """.trimIndent()
                     )
                 } else {
                     savedCards.appendText("""
-                    ${ list[ind] }
+                    ${ lines[ind] }
                     
                     """.trimIndent()
                     )
                 }
             }
-            println(cards.size.toString() + " cards have been saved.")
+            println((list.size.toString() + " cards have been saved.").addToLog())
         } catch (_: Exception) {
-            println("Something goes wrong!")
+            println("Something goes wrong!".addToLog())
         }
-        menu()
     }
-    private fun asking() {
-        println("How many times to ask?")
-        repeat(scan.nextInt()) {
-            val term = cards.keys.random()
-            println("Print the definition of \"$term\"")
-            val answer = readln()
+
+    fun ask(list: MutableList<Card>) {
+        println("How many times to ask?".addToLog())
+        val input: Int = try {
+            readln().addToLog().toInt()
+        } catch (e: NumberFormatException) {
+            println("Input a number!".addToLog())
+            readln().addToLog().toInt()
+        }
+        repeat(input) {
+            val index = random.nextInt(0, list.size)
+            val term = list[index].term
+            val def = list[index].definition
+            println("Print the definition of \"$term\"".addToLog())
+            val answer = readln().addToLog()
             when {
-                answer == cards[term] -> println("Correct!")
-                answer in cards.values && answer != cards[term] ->
+                answer == def -> println("Correct!".addToLog())
+                check(list, answer).isNotEmpty() -> {
                     println(
-                        "Wrong. The right answer is \"${ cards[term] }\", " +
-                        "but your definition is correct for \"${ getKey(answer) }\"."
-                    )
-                answer !in cards.values ->
-                    println("Wrong. The right answer is \"${ cards[term] }\".")
+                        ("Wrong. The right answer is \"${def}\", " +
+                                "but your definition is correct for \"${ check(list, answer).first().term }\".").addToLog())
+                    list[index].mistakes++
+                }
+                check(list, answer).isEmpty() -> {
+                    println("Wrong. The right answer is \"${def}\".".addToLog())
+                    list[index].mistakes++
+                }
             }
         }
-        menu()
     }
-    private fun getKey(ans: String): String {
-        var res = ""
-        for ((key, value) in cards) {
-            if (value == ans) res = key
+    private fun check(list: MutableList<Card>, def: String): List<Card> {
+        return list.filter { it.definition == def }
+    }
+
+    fun log() {
+        println("File name:".addToLog())
+        val logFile = File(readln().addToLog())
+        println("The log has been saved.".addToLog())
+        for (ind in logList.indices) {
+            if (ind == 0) {
+                logFile.writeText("""
+                    ${ logList[ind] }
+                    
+                """.trimIndent())
+            } else {
+                logFile.appendText("""
+                    ${ logList[ind] }
+                    
+                """.trimIndent())
+            }
         }
-        return res
     }
-    private fun exit() {
-        println("Bye bye!")
-        stop = true
+
+    fun hardestCard(list: MutableList<Card>) {
+        val filtered = list.filter { it.mistakes == list.maxOf { card -> card.mistakes } }
+        if (filtered.any { it.mistakes > 0}) {
+            if (filtered.size == 1) {
+                println(
+                    ("The hardest card is \"${filtered.first().term}\". " +
+                            "You have ${filtered.first().mistakes} errors answering it.").addToLog())
+            } else {
+                val li = buildList {
+                    this.add("The hardest cards are")
+                    for (ind in filtered.indices) {
+                        if (ind == filtered.lastIndex) this.add("\"${ filtered[ind].term }\".")
+                        else this.add("\"${filtered[ind].term}\",")
+                    }
+                    this.add("You have ${filtered.first().mistakes} errors answering them.")
+                }
+                println(li.joinToString(" ").addToLog())
+            }
+        } else println("There are no cards with errors.".addToLog())
+    }
+
+    fun reset(list: MutableList<Card>) {
+        list.forEach {
+            it.mistakes = 0
+        }
+        println("Card statistics have been reset.".addToLog())
+    }
+
+    fun exit(): Boolean {
+        println("Bye bye!".addToLog())
+        return true
     }
 }
